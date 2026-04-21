@@ -30,6 +30,12 @@ pip install requests pandas openpyxl
 
 Configure the script using environment variables. The script works with both local SonarQube instances and SonarCloud.
 
+Priority order used by the script:
+
+1. OS environment variables
+2. Values from `.env` file in the project root
+3. Built-in default for `SONAR_URL` (`http://localhost:9000/api/issues/search`)
+
 ### For Local SonarQube Instance (default)
 
 ```bash
@@ -47,6 +53,32 @@ export SONAR_TOKEN='your-authentication-token'               # Your authenticati
 ```
 
 Alternatively, you can edit these values directly in the script.
+
+### Using a `.env` file
+
+Create a `.env` file in the repository root:
+
+```env
+SONAR_URL=http://localhost:9000/api/issues/search
+SONAR_PROJECT_KEY=your-project-key
+SONAR_TOKEN=your-authentication-token
+```
+
+Then run:
+
+```bash
+python sonar-export.py
+```
+
+PowerShell one-liner to create it quickly:
+
+```powershell
+@"
+SONAR_URL=http://localhost:9000/api/issues/search
+SONAR_PROJECT_KEY=your-project-key
+SONAR_TOKEN=your-authentication-token
+"@ | Set-Content .env
+```
 
 ## Usage
 
@@ -76,6 +108,26 @@ python sonar-export.py --format [csv|xlsx]
 
 - `--format csv`: Export to CSV format (better cross-platform compatibility, smaller file size)
 - `--format xlsx`: Export to Excel format (default, better for viewing in spreadsheet applications)
+
+### Date Range Examples
+
+Use an explicit date range:
+
+```bash
+python sonar-export.py --start-date 2026-01-01 --end-date 2026-03-31
+```
+
+Use a rolling window ending today (default is 90 days):
+
+```bash
+python sonar-export.py --window-days 30
+```
+
+Combine format + date options:
+
+```bash
+python sonar-export.py --format csv --start-date 2026-01-01 --end-date 2026-02-01
+```
 
 ## Features
 
@@ -140,10 +192,12 @@ Writing chunk of 5000 issues to CSV...
 
 ## Customization
 
-You can customize the date range and other parameters by editing the script:
+You can customize export behavior using CLI arguments:
 
-- `start_date`: Change the start date for issue retrieval (default: 2025-01-01)
-- `end_date`: Change the end date (default: current date)
+- `--start-date`: Set start date (`YYYY-MM-DD`)
+- `--end-date`: Set end date (`YYYY-MM-DD`, default: current date)
+- `--window-days`: Lookback window used when `--start-date` is not provided (default: 90)
+- `--format`: Output file format (`csv` or `xlsx`)
 - `delta`: Adjust the date range chunk size (default: 30 days)
 - `chunk_size`: Change how often data is written to disk (default: 5000 issues)
 
