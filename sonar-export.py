@@ -10,21 +10,64 @@ except ImportError as e:
     print("Run: pip install requests pandas openpyxl")
     exit(1)
 
+
+def load_env_file(env_path='.env'):
+    values = {}
+    if not os.path.exists(env_path):
+        return values
+
+    try:
+        with open(env_path, 'r', encoding='utf-8') as env_file:
+            for raw_line in env_file:
+                line = raw_line.strip()
+                if not line or line.startswith('#') or '=' not in line:
+                    continue
+
+                key, value = line.split('=', 1)
+                key = key.strip()
+                value = value.strip().strip('"').strip("'")
+                values[key] = value
+    except OSError as e:
+        print(f"Warning: could not read {env_path}: {e}")
+
+    return values
+
+
+dotenv_values = load_env_file('.env')
+
 # SonarQube parameters
-SONARQUBE_URL = os.getenv('SONAR_URL', 'http://localhost:9000/api/issues/search') #Sonar Instance URL
-PROJECT_KEY = os.getenv('SONAR_PROJECT_KEY', '') #Your Project Key
-TOKEN = os.getenv('SONAR_TOKEN', '') #Your Project Token
+SONARQUBE_URL = os.getenv('SONAR_URL') or dotenv_values.get('SONAR_URL') or 'http://localhost:9000/api/issues/search' #Sonar Instance URL
+PROJECT_KEY = os.getenv('SONAR_PROJECT_KEY') or dotenv_values.get('SONAR_PROJECT_KEY', '') #Your Project Key
+TOKEN = os.getenv('SONAR_TOKEN') or dotenv_values.get('SONAR_TOKEN', '') #Your Project Token
+
+# Parse command-line arguments
+parser = argparse.ArgumentParser(description='Export SonarQube issues to CSV or Excel format')
+parser.add_argument('--format', type=str, choices=['csv', 'xlsx'], default='xlsx',
+                    help='Output format: csv or xlsx (default: xlsx)')
+parser.add_argument('--start-date', type=str, default=None,
+                    help='Start date (YYYY-MM-DD). If omitted, uses --window-days from end date.')
+parser.add_argument('--end-date', type=str, default=None,
+                    help='End date (YYYY-MM-DD). Defaults to today if omitted.')
+parser.add_argument('--window-days', type=int, default=90,
+                    help='Lookback window in days when --start-date is not provided (default: 90).')
+args = parser.parse_args()
 
 # Add basic input validation
 if not PROJECT_KEY or not TOKEN:
     print("Error: PROJECT_KEY and TOKEN must be configured")
     exit(1)
 
-# Parse command-line arguments
-parser = argparse.ArgumentParser(description='Export SonarQube issues to CSV or Excel format')
-parser.add_argument('--format', type=str, choices=['csv', 'xlsx'], default='xlsx',
-                    help='Output format: csv or xlsx (default: xlsx)')
-args = parser.parse_args()
+if args.window_days <= 0:
+    print("Error: --window-days must be greater than 0")
+    exit(1)
+
+
+def parse_date_argument(date_value, argument_name):
+    try:
+        return datetime.strptime(date_value, '%Y-%m-%d')
+    except ValueError:
+        print(f"Error: {argument_name} must use YYYY-MM-DD format")
+        exit(1)
 
 # Function to write data in chunks to CSV
 def write_chunk_to_csv(filename, chunk_data, mode='w'):
@@ -66,9 +109,19 @@ auth = base64.b64encode(f'{TOKEN}:'.encode()).decode()
 headers = {'Authorization': f'Basic {auth}'}
 page_size = 500  # Page size, maximum allowed by SonarQube
 
+# Use a recent default date range to avoid scanning historical years unless requested.
+end_date = parse_date_argument(args.end_date, '--end-date') if args.end_date else datetime.now()
+start_date = (
+    parse_date_argument(args.start_date, '--start-date')
+    if args.start_date
+    else end_date - timedelta(days=args.window_days)
+)
+
+if start_date >= end_date:
+    print('Error: start date must be earlier than end date')
+    exit(1)
+
 # Adjust date ranges as necessary to ensure each range returns less than 10,000 issues
-start_date = datetime(2000, 1, 1)  # Example start date
-end_date = datetime.now()  # Current date and time
 delta = timedelta(days=30)  # Adjust the range to ensure < 10,000 results
 
 current_start_date = start_date
